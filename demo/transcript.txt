@@ -1,0 +1,123 @@
+# outagekit demo - real CLI output on the SYNTHETIC fixtures
+# (acme-ops: a team with gaps; ready-ops: a team that is ready.
+#  Verdicts are the fixtures' own, not measurements of any real
+#  company. Freshness is scored against 2026-11-14.)
+
+$ outagekit init
+outagekit init - created in /tmp/outagekit-demo/work:
+  outagekit.json
+  runbooks/microsoft-365.md
+  templates/staff-announcement.md
+next steps:
+  1. Edit outagekit.json: add your critical vendors, fallback channel, escalation contacts.
+  2. Run: outagekit audit .     (report - always exits 0)
+  3. Run: outagekit check .     (CI gate - exit 0 READY, 1 GAPS, 2 NOT-READY)
+
+$ outagekit audit examples/acme-ops
+outagekit audit - /home/hatch/workspace/github-repo-factory/outagekit-build/examples/acme-ops
+verdict: GAPS  (CRITICAL 0, HIGH 8, WARN 3)
+
+check name              result     severity  evidence
+----------------------------------------------------------------------------------------------------
+C1    STATUS-PAGE       WARN       WARN      [Stripe] important vendor "Stripe" has no statusPageUrl configured
+C2    STATUS-PAGE-LIVE  PASS       -
+C3    RUNBOOK-EXISTS    PASS       -
+C4    RUNBOOK-STEP-1    FAIL       HIGH      [Microsoft 365] runbook does not name the status page URL in its first 40 l... (runbooks/microsoft-365.md:1)
+C5    NO-LOCAL-FIX      FAIL       HIGH      [Microsoft 365] forbidden local-fix step: "reinstall" (runbooks/microsoft-365.md:12)
+                                   HIGH      [Microsoft 365] forbidden local-fix step: "reset the password" (runbooks/microsoft-365.md:14)
+                                   HIGH      [Microsoft 365] forbidden local-fix step: "re-create the mailbox" (runbooks/microsoft-365.md:14)
+C6    FALLBACK-CHANNEL  WARN       WARN      fallback channel last tested 201 days ago (limit 90 days)
+C7    ESCALATION        FAIL       HIGH      primary and backup escalation use the same channel ("phone") - one dead cha...
+C8    COMMS-TEMPLATE    FAIL       HIGH      comms template has no {{vendor_cause}} placeholder - it cannot state only t... (templates/staff-announcement.md)
+                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:5)
+                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:6)
+C9    MAIL-TIMEOUT      PASS       -
+C10   DRILL             WARN       WARN      last full vendor-outage drill was 197 days ago (limit 180 days)
+
+summary: 0 CRITICAL, 8 HIGH, 3 WARN, 0 UNCHECKED, 0 SKIPPED
+
+$ outagekit explain examples/acme-ops --check C5
+explain C5 - NO-LOCAL-FIX
+result: FAIL  (verdict GAPS)
+
+rule: The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change
+      DNS records / re-create the mailbox or profile). Lines starting with a negation (do not / never) are not hits;
+      the per-runbook allowlist covers documented exceptions.
+
+findings (3):
+  [HIGH] forbidden local-fix step: "reinstall" (runbooks/microsoft-365.md:12)
+      evidence: Step 3: Reinstall Outlook to fix the mailbox.
+  [HIGH] forbidden local-fix step: "reset the password" (runbooks/microsoft-365.md:14)
+      evidence: Step 4: Reset the password and re-create the mailbox.
+  [HIGH] forbidden local-fix step: "re-create the mailbox" (runbooks/microsoft-365.md:14)
+      evidence: Step 4: Reset the password and re-create the mailbox.
+
+how to fix: Remove the local-fix step. A vendor outage has no local fix: no reinstall, no rebuild, no password
+reset, no DNS change, no mailbox re-creation. If the step is a documented exception, add the exact phrase to
+the runbook allowlist in outagekit.json.
+
+$ outagekit check examples/acme-ops
+outagekit audit - /home/hatch/workspace/github-repo-factory/outagekit-build/examples/acme-ops
+verdict: GAPS  (CRITICAL 0, HIGH 8, WARN 3)
+
+check name              result     severity  evidence
+----------------------------------------------------------------------------------------------------
+C1    STATUS-PAGE       WARN       WARN      [Stripe] important vendor "Stripe" has no statusPageUrl configured
+C4    RUNBOOK-STEP-1    FAIL       HIGH      [Microsoft 365] runbook does not name the status page URL in its first 40 l... (runbooks/microsoft-365.md:1)
+C5    NO-LOCAL-FIX      FAIL       HIGH      [Microsoft 365] forbidden local-fix step: "reinstall" (runbooks/microsoft-365.md:12)
+                                   HIGH      [Microsoft 365] forbidden local-fix step: "reset the password" (runbooks/microsoft-365.md:14)
+                                   HIGH      [Microsoft 365] forbidden local-fix step: "re-create the mailbox" (runbooks/microsoft-365.md:14)
+C6    FALLBACK-CHANNEL  WARN       WARN      fallback channel last tested 201 days ago (limit 90 days)
+C7    ESCALATION        FAIL       HIGH      primary and backup escalation use the same channel ("phone") - one dead cha...
+C8    COMMS-TEMPLATE    FAIL       HIGH      comms template has no {{vendor_cause}} placeholder - it cannot state only t... (templates/staff-announcement.md)
+                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:5)
+                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:6)
+C10   DRILL             WARN       WARN      last full vendor-outage drill was 197 days ago (limit 180 days)
+C2    STATUS-PAGE-LIVE  PASS       -
+C3    RUNBOOK-EXISTS    PASS       -
+C9    MAIL-TIMEOUT      PASS       -
+
+summary: 0 CRITICAL, 8 HIGH, 3 WARN, 0 UNCHECKED, 0 SKIPPED
+
+check: GAPS (exit 1)
+exit: 1
+
+$ outagekit audit examples/ready-ops
+outagekit audit - /home/hatch/workspace/github-repo-factory/outagekit-build/examples/ready-ops
+verdict: READY  (CRITICAL 0, HIGH 0, WARN 0)
+
+check name              result     severity  evidence
+----------------------------------------------------------------------------------------------------
+C1    STATUS-PAGE       PASS       -
+C2    STATUS-PAGE-LIVE  PASS       -
+C3    RUNBOOK-EXISTS    PASS       -
+C4    RUNBOOK-STEP-1    PASS       -
+C5    NO-LOCAL-FIX      PASS       -
+C6    FALLBACK-CHANNEL  PASS       -
+C7    ESCALATION        PASS       -
+C8    COMMS-TEMPLATE    PASS       -
+C9    MAIL-TIMEOUT      PASS       -
+C10   DRILL             PASS       -
+
+summary: 0 CRITICAL, 0 HIGH, 0 WARN, 0 UNCHECKED, 0 SKIPPED
+
+$ outagekit check examples/ready-ops
+outagekit audit - /home/hatch/workspace/github-repo-factory/outagekit-build/examples/ready-ops
+verdict: READY  (CRITICAL 0, HIGH 0, WARN 0)
+
+check name              result     severity  evidence
+----------------------------------------------------------------------------------------------------
+C1    STATUS-PAGE       PASS       -
+C2    STATUS-PAGE-LIVE  PASS       -
+C3    RUNBOOK-EXISTS    PASS       -
+C4    RUNBOOK-STEP-1    PASS       -
+C5    NO-LOCAL-FIX      PASS       -
+C6    FALLBACK-CHANNEL  PASS       -
+C7    ESCALATION        PASS       -
+C8    COMMS-TEMPLATE    PASS       -
+C9    MAIL-TIMEOUT      PASS       -
+C10   DRILL             PASS       -
+
+summary: 0 CRITICAL, 0 HIGH, 0 WARN, 0 UNCHECKED, 0 SKIPPED
+
+check: READY (exit 0)
