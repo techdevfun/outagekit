@@ -7,7 +7,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, cpSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  cpSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,8 +25,8 @@ const CLI = join(ROOT, "dist", "cli.js");
 const EXAMPLES = join(ROOT, "examples");
 const ENV = { ...process.env, OUTAGEKIT_NOW: "2026-11-14", OUTAGEKIT_OFFLINE: "1" };
 
-function run(args, env = ENV) {
-  return spawnSync("node", [CLI, ...args], { encoding: "utf8", env });
+function run(args, env = ENV, cwd = undefined) {
+  return spawnSync("node", [CLI, ...args], { encoding: "utf8", env, cwd });
 }
 
 function tmp() {
@@ -52,7 +60,9 @@ test("audit acme-ops: GAPS with the locked finding counts; check exits 1", () =>
   assert.deepEqual(result.summary, { critical: 0, high: 8, warn: 3, unchecked: 1, skipped: 0 });
   const c5 = result.checks.find((c) => c.id === "C5");
   assert.equal(c5.findings.length, 3);
-  assert.ok(c5.findings.every((f) => f.file === "runbooks/microsoft-365.md" && f.line && f.evidence));
+  assert.ok(
+    c5.findings.every((f) => f.file === "runbooks/microsoft-365.md" && f.line && f.evidence),
+  );
   assert.equal(result.checks.find((c) => c.id === "C4").result, "FAIL");
   assert.equal(result.checks.find((c) => c.id === "C8").findings.length, 3);
   const check = run(["check", join(EXAMPLES, "acme-ops")]);
@@ -171,4 +181,31 @@ test("privacy: phone/email in escalation is a config error; evidence redacts con
   assert.ok(!out.stdout.includes("admin@example.com"), "email leaked into JSON output");
   assert.ok(!out.stdout.includes("555-123-4567"), "phone leaked into JSON output");
   assert.ok(out.stdout.includes("[redacted]"), "redaction marker missing");
+});
+
+test("audit with a missing runbook: NOT-READY, check exits 2", (t) => {
+  const dir = tmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(join(EXAMPLES, "ready-ops"), dir, { recursive: true });
+  const cfgPath = join(dir, "outagekit.json");
+  const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+  cfg.vendors[0].runbook = "runbooks/no-such-runbook.md";
+  cfg.vendors[1].runbook = "runbooks/no-such-runbook-either.md";
+  writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+  rmSync(join(dir, "runbooks", "vendor-outage-runbook.md"));
+  const audit = run(["audit", dir, "--format", "json"]);
+  assert.equal(audit.status, 0, audit.stderr);
+  const result = JSON.parse(audit.stdout);
+  assert.equal(result.verdict, "NOT-READY");
+  assert.equal(result.summary.critical, 2);
+  assert.equal(result.checks.find((c) => c.id === "C3").findings.length, 2);
+  const check = run(["check", dir]);
+  assert.equal(check.status, 2);
+  assert.match(check.stdout, /check: NOT-READY \(exit 2\)/);
+});
+
+test("audit prints the path as given (relative stays relative)", () => {
+  const audit = run(["audit", "examples/acme-ops"], ENV, ROOT);
+  assert.equal(audit.status, 0, audit.stderr);
+  assert.match(audit.stdout, /outagekit audit - examples\/acme-ops/);
 });

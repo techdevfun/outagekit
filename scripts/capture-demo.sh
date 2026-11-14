@@ -21,6 +21,11 @@ export OUTAGEKIT_NOW=2026-11-14
 
 WORK="$SCRATCH/work"
 mkdir -p "$WORK"
+# The demo runs from a neutral copy of the fixtures, never from the
+# build dir, so no internal workspace path can appear in the
+# transcript or the GIF. The CLI prints paths as given, so the
+# audit headers show the short relative "examples/acme-ops".
+cp -r "$ROOT/examples" "$SCRATCH/examples"
 cd "$WORK"
 
 OUT="$ROOT/demo/transcript.txt"
@@ -32,7 +37,7 @@ OUT="$ROOT/demo/transcript.txt"
   echo ""
   echo "\$ outagekit init"
   outagekit init --dir "$WORK"
-  cd "$ROOT"
+  cd "$SCRATCH"
   echo ""
   echo "\$ outagekit audit examples/acme-ops"
   outagekit audit examples/acme-ops

@@ -66,7 +66,8 @@ export function validateConfig(cfg) {
         if (!isRecord(v) || !isNonEmptyString(v.name)) {
             throw new Error("each vendor needs a non-empty name");
         }
-        if (v.criticality !== undefined && !["critical", "important", "optional"].includes(String(v.criticality))) {
+        if (v.criticality !== undefined &&
+            !["critical", "important", "optional"].includes(String(v.criticality))) {
             throw new Error(`vendor "${v.name}": criticality must be critical, important or optional`);
         }
         if (v.statusPageUrl !== undefined && !isNonEmptyString(v.statusPageUrl)) {

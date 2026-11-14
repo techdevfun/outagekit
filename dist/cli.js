@@ -83,10 +83,12 @@ function loadAuditTarget(dir, configFlag) {
     if (!existsSync(cfgPath)) {
         fail(`no outagekit.json found (looked at ${cfgPath}) - run "outagekit init" first`);
     }
-    return { dir: absDir, cfgPath };
+    // The report prints the path as the user gave it (relative stays
+    // relative); the absolute path is used only to read the files.
+    return { dir: absDir, displayDir: dir, cfgPath };
 }
 async function runAudit(dir, flags) {
-    const { dir: absDir, cfgPath } = loadAuditTarget(dir, flags.config);
+    const { displayDir, cfgPath } = loadAuditTarget(dir, flags.config);
     let cfg;
     try {
         cfg = loadConfigFile(cfgPath);
@@ -94,7 +96,7 @@ async function runAudit(dir, flags) {
     catch (e) {
         fail(e instanceof Error ? e.message : String(e));
     }
-    return auditDir(absDir, cfg, VERSION, auditOpts());
+    return auditDir(displayDir, cfg, VERSION, auditOpts());
 }
 function loadBaseline(path) {
     if (!existsSync(path))

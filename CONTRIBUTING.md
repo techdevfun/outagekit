@@ -21,7 +21,8 @@
 ```sh
 npm install
 npm run build     # tsc strict, must be clean
-npm test          # unit + e2e (29 tests)
+npm run lint      # eslint + prettier, must be clean
+npm test          # unit + e2e (50 tests)
 npm run test:live # live smoke (npm + GitHub 404 re-checks, status-page HEAD)
 npm run preflight # ASCII-only + no-internal-names scan
 npm run bench     # audit timing over the demo fixtures

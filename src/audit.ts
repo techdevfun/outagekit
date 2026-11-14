@@ -8,8 +8,8 @@
  * digit runs before they leave this module, so no contact data can
  * ever appear in table or JSON output.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, resolve, relative, basename } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, resolve, basename } from "node:path";
 import type { OutageConfig, Vendor } from "./config.js";
 import { resolveThresholds } from "./config.js";
 import type { HeadResult } from "./liveness.js";
@@ -112,9 +112,27 @@ export const FORBIDDEN_PHRASES = [
 /**
  * A line that forbids the fix is not a hit: "Do not reinstall
  * anything - there is no local fix" is the CORRECT runbook text.
- * This is a heuristic, not a proof - see README Honest limits.
+ * The negation is scoped to the matched phrase, not the whole
+ * line: the negation must appear BEFORE the phrase in the same
+ * clause (clauses break on comma, semicolon, colon or "but"), so
+ * "Do not reinstall the app, but rebuild the cache now." still
+ * flags "rebuild". This is a heuristic, not a proof - see README
+ * Honest limits.
  */
 const NEGATION_RE = /\b(do not|don't|dont|never|no local fix|not a local fix)\b/i;
+
+/** Clause separators for the C5 negation scope (see above). */
+const CLAUSE_SEP_RE = /[,;:]|\bbut\b/gi;
+
+/** True when a negation precedes the phrase at `phraseIdx` in the same clause. */
+function isNegatedBefore(line: string, phraseIdx: number): boolean {
+  const before = line.slice(0, phraseIdx);
+  let start = 0;
+  for (const m of before.matchAll(CLAUSE_SEP_RE)) {
+    start = (m.index ?? 0) + m[0].length;
+  }
+  return NEGATION_RE.test(before.slice(start));
+}
 
 /** Sentences that claim a cause of their own. */
 const CAUSE_CLAIM_RE =
@@ -134,11 +152,30 @@ const CHANNEL_VENDOR: Record<string, string> = {
 };
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const PHONE_RE = /\+?\d[\d\s().-]{6,}\d/g;
+/**
+ * A candidate phone-like token: an optional leading "+" or "(",
+ * then digits mixed with the separators phones use (space, dot,
+ * dash, parentheses). The digit count decides, not the run length:
+ * the config privacy rule treats 7+ total digits as phone data
+ * (see config.ts hasPhoneDigits), so redaction must use the same
+ * rule - "call 5551234 now" is phone data even though it has no
+ * separator. IPv4 addresses and ISO dates are NOT phone data and
+ * are left alone, so evidence keeps its fidelity.
+ */
+const PHONE_CANDIDATE_RE = /\+?\(?\d[\d\s().-]*\d/g;
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Mask contact data in an evidence line before it is reported. */
 export function redactEvidence(line: string): string {
-  return line.replace(EMAIL_RE, "[redacted]").replace(PHONE_RE, "[redacted]").trim().slice(0, 200);
+  const noEmail = line.replace(EMAIL_RE, "[redacted]");
+  const redacted = noEmail.replace(PHONE_CANDIDATE_RE, (m) => {
+    if (m.replace(/\D/g, "").length < 7) return m;
+    const token = m.trim();
+    if (IPV4_RE.test(token) || ISO_DATE_RE.test(token)) return m;
+    return "[redacted]";
+  });
+  return redacted.trim().slice(0, 200);
 }
 
 export function exitForVerdict(v: Verdict): number {
@@ -159,15 +196,27 @@ export function computeVerdict(checks: CheckOutcome[]): Verdict {
   return "READY";
 }
 
-function daysAgo(iso: string, now: Date): number | null {
+/** Strict ISO calendar date (YYYY-MM-DD): the round-trip check
+ * rejects impossible dates like 2026-02-30, which the JS Date
+ * constructor would silently normalise to 2 March. */
+export function isValidIsoDate(iso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
   const d = new Date(iso + "T00:00:00Z");
-  if (Number.isNaN(d.getTime())) return null;
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso;
+}
+
+function daysAgo(iso: string, now: Date): number | null {
+  if (!isValidIsoDate(iso)) return null;
+  const d = new Date(iso + "T00:00:00Z");
   const ms = now.getTime() - d.getTime();
   return Math.floor(ms / 86400000);
 }
 
 function slug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 function readLines(absPath: string): string[] | null {
@@ -194,11 +243,13 @@ function resolveRunbook(dir: string, vendor: Vendor): ResolvedRunbook | null {
   if (vendor.runbook) candidates.push(vendor.runbook);
   candidates.push(join("runbooks", `${slug(vendor.name)}.md`));
   for (const rel of candidates) {
+    if (isSkippedFile(rel)) continue;
     const abs = resolve(dir, rel);
     const lines = readLines(abs);
     if (lines) return { abs, rel, lines };
   }
   const sharedRel = join("runbooks", "vendor-outage-runbook.md");
+  if (isSkippedFile(sharedRel)) return null;
   const sharedAbs = resolve(dir, sharedRel);
   const sharedLines = readLines(sharedAbs);
   if (sharedLines) {
@@ -335,22 +386,29 @@ export async function auditDir(
         }
       }
       // C5: forbidden local-fix phrases, honoring the allowlist.
+      // One finding per phrase occurrence; a negation only
+      // suppresses a phrase it precedes in the same clause.
       const allowed = (cfg.allowlist?.[rb.rel] ?? []).map((p) => p.toLowerCase());
       rb.lines.forEach((line, i) => {
-        if (NEGATION_RE.test(line)) return;
         const lower = line.toLowerCase();
         for (const phrase of FORBIDDEN_PHRASES) {
-          if (!lower.includes(phrase)) continue;
           if (allowed.includes(phrase)) continue;
-          c5.push({
-            check: "C5",
-            vendor: v.name,
-            severity: "HIGH",
-            message: `forbidden local-fix step: "${phrase}"`,
-            file: rb.rel,
-            line: i + 1,
-            evidence: redactEvidence(line),
-          });
+          let from = 0;
+          for (;;) {
+            const idx = lower.indexOf(phrase, from);
+            if (idx === -1) break;
+            from = idx + phrase.length;
+            if (isNegatedBefore(line, idx)) continue;
+            c5.push({
+              check: "C5",
+              vendor: v.name,
+              severity: "HIGH",
+              message: `forbidden local-fix step: "${phrase}"`,
+              file: rb.rel,
+              line: i + 1,
+              evidence: redactEvidence(line),
+            });
+          }
         }
       });
     }
@@ -382,8 +440,13 @@ export async function auditDir(
           message: `fallback channel "${fb.type}" depends on listed vendor ${depVendor} - it fails together with the outage`,
         });
       }
-      if ((type === "email" || type === "mail") && cfg.vendors.some((v) => /mail|exchange|365|google workspace/i.test(v.name))) {
-        const mailVendor = cfg.vendors.find((v) => /mail|exchange|365|google workspace/i.test(v.name));
+      if (
+        (type === "email" || type === "mail") &&
+        cfg.vendors.some((v) => /mail|exchange|365|google workspace/i.test(v.name))
+      ) {
+        const mailVendor = cfg.vendors.find((v) =>
+          /mail|exchange|365|google workspace/i.test(v.name),
+        );
         findings.push({
           check: "C6",
           severity: "HIGH",
@@ -394,7 +457,8 @@ export async function auditDir(
         findings.push({
           check: "C6",
           severity: "WARN",
-          message: "fallback channel has no lastTested date - untested channels are assumed untested",
+          message:
+            "fallback channel has no lastTested date - untested channels are assumed untested",
         });
       } else {
         const age = daysAgo(fb.lastTested, now);
@@ -465,7 +529,7 @@ export async function auditDir(
       });
     } else {
       const abs = resolve(dir, tplRel);
-      const lines = readLines(abs);
+      const lines = isSkippedFile(tplRel) ? null : readLines(abs);
       if (!lines) {
         findings.push({
           check: "C8",
@@ -479,20 +543,38 @@ export async function auditDir(
           findings.push({
             check: "C8",
             severity: "HIGH",
-            message: "comms template has no {{vendor_cause}} placeholder - it cannot state only the vendor published cause",
+            message:
+              "comms template has no {{vendor_cause}} placeholder - it cannot state only the vendor published cause",
             file: tplRel,
           });
         }
+        // One finding per cause claim, not per line. A line that
+        // contains the {{vendor_cause}} placeholder is still
+        // scanned: only the placeholder itself (and the words
+        // introducing it, "The vendor published cause is:") are
+        // ignored - a claim elsewhere on the same line is a hit.
         lines.forEach((line, i) => {
-          if (line.includes("{{vendor_cause}}")) return;
-          if (!CAUSE_CLAIM_RE.test(line)) return;
-          findings.push({
-            check: "C8",
-            severity: "HIGH",
-            message: "template asserts a cause of its own instead of the vendor published cause",
-            file: tplRel,
-            line: i + 1,
-            evidence: redactEvidence(line),
+          const segments = line.split("{{vendor_cause}}");
+          segments.forEach((seg, si) => {
+            let scan = seg;
+            if (si < segments.length - 1) {
+              scan = scan.replace(
+                /(the\s+vendor\s+published\s+cause\s+is|the\s+cause\s+is|cause\s+is)\s*:?\s*$/i,
+                "",
+              );
+            }
+            const re = new RegExp(CAUSE_CLAIM_RE.source, "gi");
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(scan)) !== null) {
+              findings.push({
+                check: "C8",
+                severity: "HIGH",
+                message: `template asserts a cause of its own ("${m[0].toLowerCase()}") instead of the vendor published cause`,
+                file: tplRel,
+                line: i + 1,
+                evidence: redactEvidence(line),
+              });
+            }
           });
         });
       }
@@ -604,7 +686,9 @@ export async function auditDir(
 
 /** Key for diffing findings across two audit results. */
 export function findingKey(f: Finding): string {
-  return [f.check, f.vendor ?? "", f.severity, f.message, f.file ?? "", String(f.line ?? "")].join("|");
+  return [f.check, f.vendor ?? "", f.severity, f.message, f.file ?? "", String(f.line ?? "")].join(
+    "|",
+  );
 }
 
 export interface DiffResult {
@@ -640,19 +724,17 @@ export function diffAudits(baseline: AuditResult, current: AuditResult): DiffRes
   return { added, fixed, stillOpen };
 }
 
-/** Directories outagekit never reads: secret material is out of scope. */
+/**
+ * Directories outagekit never reads: secret material is out of
+ * scope. Runbooks are resolved only from paths named in the
+ * manifest (plus the shared runbook); a manifest path matching
+ * one of these patterns is treated as missing and never read,
+ * and the same rule applies to the comms template. There is no
+ * directory enumeration, so nothing outside the manifest is
+ * ever opened.
+ */
 export const SKIPPED_FILE_PATTERNS = [/\.env/i, /secret/i, /\.pem$/i, /\.key$/i];
 
 export function isSkippedFile(name: string): boolean {
   return SKIPPED_FILE_PATTERNS.some((re) => re.test(basename(name)));
-}
-
-export function listRunbookFiles(dir: string): string[] {
-  const out: string[] = [];
-  const rbDir = join(dir, "runbooks");
-  if (!existsSync(rbDir)) return out;
-  for (const e of readdirSync(rbDir)) {
-    if (e.endsWith(".md") && !isSkippedFile(e)) out.push(relative(dir, join(rbDir, e)));
-  }
-  return out;
 }

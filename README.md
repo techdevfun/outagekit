@@ -8,9 +8,9 @@ Audit your vendor-outage readiness from your own runbooks. For IT ops and engine
 
 In November 2026 the largest enterprise vendor in the world could not fix its own outage on the first attempt. Microsoft 365 went down on 12 November 2026 and stayed degraded for more than a day. The facts below are Microsoft's own published words (Microsoft Service Health, status.cloud.microsoft, verified 2026-11-14):
 
-- The incident began 16:17 UTC 12 November 2026: Exchange Online (EX1550543) and the wider Microsoft 365 incident (MO1550821), affecting Outlook, Teams, SharePoint, Exchange Online and Copilot.
+- Exchange Online (EX1550543) opened 16:17 UTC 12 November 2026; the wider Microsoft 365 incident (MO1550821) followed about 2 hours later. Both affected Outlook, Teams, SharePoint, Exchange Online and Copilot.
 - Microsoft: many servers became "unexpectedly unavailable" after failing automated health checks; workload shifted to the remaining servers and overloaded them. Not a traffic surge. No sign of cyberattack.
-- The first fix "did not produce the desired effect" (Microsoft's own wording).
+- The first fix did not take effect as expected: Microsoft's own wording was "the change is not taking effect as expected".
 - Update 17:57 UTC 13 November 2026: "This was a technical issue not related to cyber or AI / agents. The incident was introduced by an issue during an earlier network capacity upgrade that surfaced following a recent network change. We have addressed the underlying issue and continue to restore service to remaining customers and regions."
 - Microsoft extended the email timeout window to 48 hours during the incident.
 - Final update 04:17 UTC 14 November 2026: MO1550821 reads "serviceRestored", recovery confirmed across previously affected environments; end time given as 16:10 UTC 13 November 2026. The full post-incident report has not yet been published.
@@ -31,7 +31,7 @@ npm run build
 npm link   # or: node dist/cli.js ...
 ```
 
-Golden path (measured 0.4 s end to end):
+Golden path (measured 0.4 s end to end with a fast connection - each audit/check does live C2 HEAD requests, so the time is network-dependent):
 
 ```sh
 outagekit init                # scaffold outagekit.json + runbook + template
@@ -60,8 +60,8 @@ C5    NO-LOCAL-FIX      FAIL       HIGH      [Microsoft 365] forbidden local-fix
 C6    FALLBACK-CHANNEL  WARN       WARN      fallback channel last tested 201 days ago (limit 90 days)
 C7    ESCALATION        FAIL       HIGH      primary and backup escalation use the same channel ("phone") - one dead cha...
 C8    COMMS-TEMPLATE    FAIL       HIGH      comms template has no {{vendor_cause}} placeholder - it cannot state only t... (templates/staff-announcement.md)
-                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:5)
-                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:6)
+                                   HIGH      template asserts a cause of its own ("was caused by") instead of the vendor... (templates/staff-announcement.md:5)
+                                   HIGH      template asserts a cause of its own ("root cause is") instead of the vendor... (templates/staff-announcement.md:6)
 C9    MAIL-TIMEOUT      PASS       -
 C10   DRILL             WARN       WARN      last full vendor-outage drill was 197 days ago (limit 180 days)
 
@@ -74,8 +74,9 @@ explain C5 - NO-LOCAL-FIX
 result: FAIL  (verdict GAPS)
 
 rule: The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change
-      DNS records / re-create the mailbox or profile). Lines starting with a negation (do not / never) are not hits;
-      the per-runbook allowlist covers documented exceptions.
+      DNS records / re-create the mailbox or profile). A negation (do not / never) before a phrase in the same
+      clause is not a hit; a phrase after a clause break (comma, semicolon, but) is still flagged. The per-runbook
+      allowlist covers documented exceptions.
 
 findings (3):
   [HIGH] forbidden local-fix step: "reinstall" (runbooks/microsoft-365.md:12)
@@ -92,6 +93,24 @@ the runbook allowlist in outagekit.json.
 
 ```text
 $ outagekit check examples/ready-ops
+outagekit audit - examples/ready-ops
+verdict: READY  (CRITICAL 0, HIGH 0, WARN 0)
+
+check name              result     severity  evidence
+----------------------------------------------------------------------------------------------------
+C1    STATUS-PAGE       PASS       -
+C2    STATUS-PAGE-LIVE  PASS       -
+C3    RUNBOOK-EXISTS    PASS       -
+C4    RUNBOOK-STEP-1    PASS       -
+C5    NO-LOCAL-FIX      PASS       -
+C6    FALLBACK-CHANNEL  PASS       -
+C7    ESCALATION        PASS       -
+C8    COMMS-TEMPLATE    PASS       -
+C9    MAIL-TIMEOUT      PASS       -
+C10   DRILL             PASS       -
+
+summary: 0 CRITICAL, 0 HIGH, 0 WARN, 0 UNCHECKED, 0 SKIPPED
+
 check: READY (exit 0)
 ```
 
@@ -113,10 +132,10 @@ check: READY (exit 0)
 | C2 | STATUS-PAGE-LIVE | HEAD request to the configured status page URL returns 2xx/3xx. GET retry when HEAD is refused (401/403/405) - Microsoft's status page answers HEAD with 401 and GET with 200. Offline pages report UNCHECKED, never PASS | WARN (only when reachable and failing) |
 | C3 | RUNBOOK-EXISTS | A runbook file exists for every critical vendor (or the shared runbook names the vendor) | CRITICAL |
 | C4 | RUNBOOK-STEP-1 | The runbook names the vendor's status page URL within its first 40 lines | HIGH |
-| C5 | NO-LOCAL-FIX | The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change DNS records / re-create the mailbox or profile). Each hit is reported with line + phrase. Lines starting with a negation ("do not", "never") are not hits. Per-runbook allowlist covers documented exceptions. C5 is a heuristic, not a proof. | HIGH |
+| C5 | NO-LOCAL-FIX | The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change DNS records / re-create the mailbox or profile). Each hit is reported with line + phrase. A negation ("do not", "never") before a phrase in the same clause is not a hit; a phrase after a clause break is still flagged. Per-runbook allowlist covers documented exceptions. C5 is a heuristic, not a proof. | HIGH |
 | C6 | FALLBACK-CHANNEL | A fallback comms channel is defined on a channel that does NOT depend on any listed vendor, and `lastTested` is within 90 days | HIGH if missing; WARN if stale |
 | C7 | ESCALATION | Primary + backup escalation contacts defined, on different channels, and not the same person | HIGH |
-| C8 | COMMS-TEMPLATE | Staff-announcement template exists, contains a `{{vendor_cause}}` placeholder (state only the vendor's published cause), and asserts no root cause of its own | HIGH |
+| C8 | COMMS-TEMPLATE | Staff-announcement template exists, contains a `{{vendor_cause}}` placeholder (state only the vendor's published cause), and asserts no root cause of its own (one finding per claim) | HIGH |
 | C9 | MAIL-TIMEOUT | Mail timeout / retry window is documented (runbook or manifest) and at least 24h | WARN |
 | C10 | DRILL | Last full vendor-outage drill within 180 days | WARN if stale/missing |
 
@@ -152,7 +171,7 @@ Runbooks: one markdown file per critical vendor, or one shared `runbooks/vendor-
 
 Contact privacy: escalation contacts are names + channel TYPES only. A manifest that puts a phone number or email address in an escalation contact is refused at load time, and evidence lines in output are redacted for email addresses and phone-like digit runs. Phone numbers and email addresses are never printed or stored in output.
 
-Data control: outagekit reads runbook text and the manifest only. It never reads secret values or env values, and never reads files matching `.env*`, `*secret*`, `*.pem` or `*.key`.
+Data control: outagekit reads runbook text and the manifest only. It never reads secret values or env values, and never reads files matching `.env*`, `*secret*`, `*.pem` or `*.key`. Runbooks are resolved only from paths named in the manifest (plus the shared runbook); a manifest path matching one of those patterns is treated as missing and never read.
 
 ## Alternatives (verified 2026-11-14)
 
@@ -162,7 +181,7 @@ Data control: outagekit reads runbook text and the manifest only. It never reads
 | Better Stack / UptimeRobot | Uptime + status monitoring for your services and third-party status pages, with alerting | Monitoring is not readiness - no runbook audit, no fallback freshness, no comms-template check, no CI gate on the plan |
 | incident.io / PagerDuty / Rootly | Incident management SaaS: declare, page, run and review incidents | They start when the incident starts; none reads your repo and audits in advance whether the plan they will execute is complete |
 | OutagePulse (outagepulse.com) | Kubernetes observability your AI agent reads over MCP (eBPF, DaemonSet, grounded RCA) | Debugs YOUR outage after it happens; never audits your readiness plan for a VENDOR outage, and needs a cluster where outagekit needs only files |
-| HA/DR Field Kit (kit.reliabilityops.dev) | Browser checklists for DB failover triage, read-only, offline | Manual browser checklists for database failover only - no vendor-outage scope, no manifest, no CI gate, no freshness tracking |
+| HA/DR Field Kit (kit.reliabilityops.dev) | Browser checklists for failover triage (databases, Applications, Incident Command, Dashboards), read-only, offline | Manual browser checklists - no vendor-outage scope, no manifest, no CI gate, no freshness tracking |
 | vendormap (techdevfun, same author) | Measures vendor CONCENTRATION from the repo: which single vendor can take you down | Says nothing about whether you are ready when that vendor goes down - concentration and readiness are complementary halves, not the same tool |
 | Status-page aggregators / Downdetector | Crowd reports that a vendor is down | A signal is not a plan; no audit, no gate, no evidence |
 
@@ -172,7 +191,7 @@ Strongest rival: incident.io + Statuspage as a pair - the pair covers "know the 
 
 - Statuspage / Better Stack give REAL-TIME vendor status and alerts. outagekit only checks the status-page URL is configured (and, when online, reachable).
 - incident.io / PagerDuty page real humans and run real incidents. outagekit never pages anyone.
-- HA/DR Field Kit covers database failover depth outagekit never touches.
+- HA/DR Field Kit covers failover-triage depth (databases, Applications, Incident Command, Dashboards) outagekit never touches.
 - outagekit only sees what is in the files it reads. The team's actual skill, the vendor's real recovery speed and the human judgement in the room are invisible to it.
 
 ## Honest limits
@@ -185,9 +204,9 @@ Strongest rival: incident.io + Statuspage as a pair - the pair covers "know the 
 
 ## Performance
 
-- `audit` over the 2 demo fixtures (200 runs each, liveness skipped): median 0.65 ms, p95 2.3 ms (target was p95 under 2 s). Run `npm run bench` to reproduce.
+- `audit` over the 2 demo fixtures (200 runs each, liveness skipped): median 0.62 ms, p95 1.9 ms (target was p95 under 2 s). Run `npm run bench` to reproduce.
 - Clean install from source (`npm install` + `npm run build`, no cache): 3.7 s, measured 2026-11-14.
-- Golden path (`init` then `audit` then `check`): 0.4 s, measured 2026-11-14.
+- Golden path (`init` then `audit` then `check`): 0.4 s, measured 2026-11-14 with a fast connection; network-dependent (live C2 HEAD checks).
 
 ## Roadmap (out of scope for v0.1.0, not silently dropped)
 

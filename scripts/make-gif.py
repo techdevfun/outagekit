@@ -78,7 +78,7 @@ def save(img):
     n += 1
     img.save(os.path.join(FRAMES_DIR, f"frame{n:04d}.png"))
 
-# Title card (2.5s at 20 fps).
+# Title card (3s at 20 fps).
 title = Image.new("RGB", (W, H), BG)
 d = ImageDraw.Draw(title)
 d.text((14, 120), "outagekit - are you ready for your vendor's next bad day?", font=bold, fill=GREEN)
@@ -89,8 +89,22 @@ d.text((14, 260), "4. check acme-ops: GAPS, exit 1", font=font, fill=FG)
 d.text((14, 290), "5. audit ready-ops: READY, check exit 0", font=font, fill=FG)
 d.text((14, 360), "zero-dep CLI - offline, no API key, no server", font=font, fill=DIM)
 d.text((14, 390), "synthetic fixtures, real CLI output", font=font, fill=DIM)
-for _ in range(50):
+for _ in range(60):
     save(title.copy())
+
+# Extra hold frames so a first-time viewer can actually read the
+# verdict tables: longer holds on verdict lines, summaries and the
+# final READY frame. Total target is ~30 s at 20 fps.
+def extra_holds(line: str) -> int:
+    if line.startswith("verdict:"):
+        return 20
+    if line.startswith("summary:"):
+        return 10
+    if line.startswith("check: GAPS"):
+        return 20
+    if line.startswith("check: READY"):
+        return 40
+    return 0
 
 canvas: list[tuple[str, tuple]] = []
 for line in lines:
@@ -102,6 +116,8 @@ for line in lines:
     save(render(canvas + [(line, color)]))
     canvas.append((line, color))
     save(render(canvas))
+    for _ in range(extra_holds(line)):
+        save(render(canvas))
 
 out = os.path.join(ROOT, "demo", "outagekit-demo.gif")
 cmd = [

@@ -91,7 +91,7 @@ function ruleText(id) {
         case "C4":
             return "The runbook names the vendor status page URL within its first 40 lines.";
         case "C5":
-            return "The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change DNS records / re-create the mailbox or profile). Lines starting with a negation (do not / never) are not hits; the per-runbook allowlist covers documented exceptions.";
+            return "The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change DNS records / re-create the mailbox or profile). A negation (do not / never) before a phrase in the same clause is not a hit; a phrase after a clause break (comma, semicolon, but) is still flagged. The per-runbook allowlist covers documented exceptions.";
         case "C6":
             return "A fallback comms channel is defined on a channel that does not depend on any listed vendor, and lastTested is within the fallbackTestMaxDays threshold (default 90 days).";
         case "C7":

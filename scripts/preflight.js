@@ -29,7 +29,15 @@ const WORD_RE = (w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const BINARY_EXTS = new Set([
-  ".gif", ".png", ".jpg", ".jpeg", ".zip", ".ico", ".woff", ".woff2", ".ttf",
+  ".gif",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".zip",
+  ".ico",
+  ".woff",
+  ".woff2",
+  ".ttf",
 ]);
 
 let failures = 0;

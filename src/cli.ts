@@ -69,7 +69,10 @@ function positional(args: string[]): string[] {
 
 /** Test hooks (documented): OUTAGEKIT_NOW pins "today" (YYYY-MM-DD),
  *  OUTAGEKIT_OFFLINE=1 forces the C2 liveness check to UNCHECKED. */
-function auditOpts(): { now: Date; headCheck: (url: string) => Promise<"ok" | "fail" | "offline"> } {
+function auditOpts(): {
+  now: Date;
+  headCheck: (url: string) => Promise<"ok" | "fail" | "offline">;
+} {
   const nowRaw = process.env.OUTAGEKIT_NOW;
   const now = nowRaw ? new Date(nowRaw + "T00:00:00Z") : new Date();
   if (Number.isNaN(now.getTime())) fail(`OUTAGEKIT_NOW is not a date: ${nowRaw}`);
@@ -80,25 +83,34 @@ function auditOpts(): { now: Date; headCheck: (url: string) => Promise<"ok" | "f
   return { now, headCheck };
 }
 
-function loadAuditTarget(dir: string, configFlag: string | boolean | undefined): { dir: string; cfgPath: string } {
+function loadAuditTarget(
+  dir: string,
+  configFlag: string | boolean | undefined,
+): { dir: string; displayDir: string; cfgPath: string } {
   const absDir = resolve(dir);
   if (!existsSync(absDir)) fail(`directory not found: ${dir}`);
-  const cfgPath = typeof configFlag === "string" ? resolve(configFlag) : join(absDir, "outagekit.json");
+  const cfgPath =
+    typeof configFlag === "string" ? resolve(configFlag) : join(absDir, "outagekit.json");
   if (!existsSync(cfgPath)) {
     fail(`no outagekit.json found (looked at ${cfgPath}) - run "outagekit init" first`);
   }
-  return { dir: absDir, cfgPath };
+  // The report prints the path as the user gave it (relative stays
+  // relative); the absolute path is used only to read the files.
+  return { dir: absDir, displayDir: dir, cfgPath };
 }
 
-async function runAudit(dir: string, flags: Record<string, string | boolean>): Promise<AuditResult> {
-  const { dir: absDir, cfgPath } = loadAuditTarget(dir, flags.config);
+async function runAudit(
+  dir: string,
+  flags: Record<string, string | boolean>,
+): Promise<AuditResult> {
+  const { displayDir, cfgPath } = loadAuditTarget(dir, flags.config);
   let cfg;
   try {
     cfg = loadConfigFile(cfgPath);
   } catch (e) {
     fail(e instanceof Error ? e.message : String(e));
   }
-  return auditDir(absDir, cfg, VERSION, auditOpts());
+  return auditDir(displayDir, cfg, VERSION, auditOpts());
 }
 
 function loadBaseline(path: string): AuditResult {
@@ -142,7 +154,8 @@ async function main(): Promise<void> {
   if (cmd === "audit") {
     const flags = parseFlags(args.slice(1));
     const pos = positional(args.slice(1));
-    if (pos.length !== 1) fail("usage: outagekit audit <dir> [--config <file>] [--format table|json]");
+    if (pos.length !== 1)
+      fail("usage: outagekit audit <dir> [--config <file>] [--format table|json]");
     const result = await runAudit(pos[0], flags);
     const format = typeof flags.format === "string" ? flags.format : "table";
     if (format === "json") console.log(JSON.stringify(result, null, 2));

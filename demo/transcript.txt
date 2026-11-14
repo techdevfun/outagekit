@@ -14,7 +14,7 @@ next steps:
   3. Run: outagekit check .     (CI gate - exit 0 READY, 1 GAPS, 2 NOT-READY)
 
 $ outagekit audit examples/acme-ops
-outagekit audit - /home/hatch/workspace/github-repo-factory/outagekit-build/examples/acme-ops
+outagekit audit - examples/acme-ops
 verdict: GAPS  (CRITICAL 0, HIGH 8, WARN 3)
 
 check name              result     severity  evidence
@@ -29,8 +29,8 @@ C5    NO-LOCAL-FIX      FAIL       HIGH      [Microsoft 365] forbidden local-fix
 C6    FALLBACK-CHANNEL  WARN       WARN      fallback channel last tested 201 days ago (limit 90 days)
 C7    ESCALATION        FAIL       HIGH      primary and backup escalation use the same channel ("phone") - one dead cha...
 C8    COMMS-TEMPLATE    FAIL       HIGH      comms template has no {{vendor_cause}} placeholder - it cannot state only t... (templates/staff-announcement.md)
-                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:5)
-                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:6)
+                                   HIGH      template asserts a cause of its own ("was caused by") instead of the vendor... (templates/staff-announcement.md:5)
+                                   HIGH      template asserts a cause of its own ("root cause is") instead of the vendor... (templates/staff-announcement.md:6)
 C9    MAIL-TIMEOUT      PASS       -
 C10   DRILL             WARN       WARN      last full vendor-outage drill was 197 days ago (limit 180 days)
 
@@ -41,8 +41,9 @@ explain C5 - NO-LOCAL-FIX
 result: FAIL  (verdict GAPS)
 
 rule: The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change
-      DNS records / re-create the mailbox or profile). Lines starting with a negation (do not / never) are not hits;
-      the per-runbook allowlist covers documented exceptions.
+      DNS records / re-create the mailbox or profile). A negation (do not / never) before a phrase in the same
+      clause is not a hit; a phrase after a clause break (comma, semicolon, but) is still flagged. The per-runbook
+      allowlist covers documented exceptions.
 
 findings (3):
   [HIGH] forbidden local-fix step: "reinstall" (runbooks/microsoft-365.md:12)
@@ -57,7 +58,7 @@ reset, no DNS change, no mailbox re-creation. If the step is a documented except
 the runbook allowlist in outagekit.json.
 
 $ outagekit check examples/acme-ops
-outagekit audit - /home/hatch/workspace/github-repo-factory/outagekit-build/examples/acme-ops
+outagekit audit - examples/acme-ops
 verdict: GAPS  (CRITICAL 0, HIGH 8, WARN 3)
 
 check name              result     severity  evidence
@@ -70,8 +71,8 @@ C5    NO-LOCAL-FIX      FAIL       HIGH      [Microsoft 365] forbidden local-fix
 C6    FALLBACK-CHANNEL  WARN       WARN      fallback channel last tested 201 days ago (limit 90 days)
 C7    ESCALATION        FAIL       HIGH      primary and backup escalation use the same channel ("phone") - one dead cha...
 C8    COMMS-TEMPLATE    FAIL       HIGH      comms template has no {{vendor_cause}} placeholder - it cannot state only t... (templates/staff-announcement.md)
-                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:5)
-                                   HIGH      template asserts a cause of its own instead of the vendor published cause (templates/staff-announcement.md:6)
+                                   HIGH      template asserts a cause of its own ("was caused by") instead of the vendor... (templates/staff-announcement.md:5)
+                                   HIGH      template asserts a cause of its own ("root cause is") instead of the vendor... (templates/staff-announcement.md:6)
 C10   DRILL             WARN       WARN      last full vendor-outage drill was 197 days ago (limit 180 days)
 C2    STATUS-PAGE-LIVE  PASS       -
 C3    RUNBOOK-EXISTS    PASS       -
@@ -83,7 +84,7 @@ check: GAPS (exit 1)
 exit: 1
 
 $ outagekit audit examples/ready-ops
-outagekit audit - /home/hatch/workspace/github-repo-factory/outagekit-build/examples/ready-ops
+outagekit audit - examples/ready-ops
 verdict: READY  (CRITICAL 0, HIGH 0, WARN 0)
 
 check name              result     severity  evidence
@@ -102,7 +103,7 @@ C10   DRILL             PASS       -
 summary: 0 CRITICAL, 0 HIGH, 0 WARN, 0 UNCHECKED, 0 SKIPPED
 
 $ outagekit check examples/ready-ops
-outagekit audit - /home/hatch/workspace/github-repo-factory/outagekit-build/examples/ready-ops
+outagekit audit - examples/ready-ops
 verdict: READY  (CRITICAL 0, HIGH 0, WARN 0)
 
 check name              result     severity  evidence

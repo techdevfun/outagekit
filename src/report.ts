@@ -16,21 +16,31 @@ function pad(s: string, n: number): string {
 export function renderTable(result: AuditResult): string {
   const lines: string[] = [];
   lines.push(`outagekit audit - ${result.dir}`);
-  lines.push(`verdict: ${result.verdict}  (CRITICAL ${result.summary.critical}, HIGH ${result.summary.high}, WARN ${result.summary.warn})`);
+  lines.push(
+    `verdict: ${result.verdict}  (CRITICAL ${result.summary.critical}, HIGH ${result.summary.high}, WARN ${result.summary.warn})`,
+  );
   lines.push("");
-  lines.push(`${pad("check", 5)} ${pad("name", 17)} ${pad("result", 10)} ${pad("severity", 9)} evidence`);
+  lines.push(
+    `${pad("check", 5)} ${pad("name", 17)} ${pad("result", 10)} ${pad("severity", 9)} evidence`,
+  );
   lines.push("-".repeat(100));
   for (const c of result.checks) {
     const sev = c.findings.length > 0 ? c.findings[0].severity : "-";
     const ev = c.findings.length > 0 ? findingEvidence(c.findings[0]) : "";
-    lines.push(`${pad(c.id, 5)} ${pad(c.name, 17)} ${pad(c.result, 10)} ${pad(sev, 9)} ${ev}`.trimEnd());
+    lines.push(
+      `${pad(c.id, 5)} ${pad(c.name, 17)} ${pad(c.result, 10)} ${pad(sev, 9)} ${ev}`.trimEnd(),
+    );
     for (const f of c.findings.slice(1)) {
-      lines.push(`${pad("", 5)} ${pad("", 17)} ${pad("", 10)} ${pad(f.severity, 9)} ${findingEvidence(f)}`.trimEnd());
+      lines.push(
+        `${pad("", 5)} ${pad("", 17)} ${pad("", 10)} ${pad(f.severity, 9)} ${findingEvidence(f)}`.trimEnd(),
+      );
     }
     if (c.note) lines.push(`      note: ${c.note}`);
   }
   lines.push("");
-  lines.push(`summary: ${result.summary.critical} CRITICAL, ${result.summary.high} HIGH, ${result.summary.warn} WARN, ${result.summary.unchecked} UNCHECKED, ${result.summary.skipped} SKIPPED`);
+  lines.push(
+    `summary: ${result.summary.critical} CRITICAL, ${result.summary.high} HIGH, ${result.summary.warn} WARN, ${result.summary.unchecked} UNCHECKED, ${result.summary.skipped} SKIPPED`,
+  );
   return lines.join("\n");
 }
 
@@ -99,7 +109,7 @@ function ruleText(id: string): string {
     case "C4":
       return "The runbook names the vendor status page URL within its first 40 lines.";
     case "C5":
-      return "The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change DNS records / re-create the mailbox or profile). Lines starting with a negation (do not / never) are not hits; the per-runbook allowlist covers documented exceptions.";
+      return "The runbook contains no forbidden local-fix step (reinstall / rebuild / reset password or credentials / change DNS records / re-create the mailbox or profile). A negation (do not / never) before a phrase in the same clause is not a hit; a phrase after a clause break (comma, semicolon, but) is still flagged. The per-runbook allowlist covers documented exceptions.";
     case "C6":
       return "A fallback comms channel is defined on a channel that does not depend on any listed vendor, and lastTested is within the fallbackTestMaxDays threshold (default 90 days).";
     case "C7":
@@ -126,7 +136,8 @@ export function renderDiff(diff: DiffResult, baselinePath: string): string {
   for (const f of diff.fixed) lines.push(`  - [${f.severity}] ${f.check} ${findingEvidence(f)}`);
   if (diff.fixed.length === 0) lines.push("  (none)");
   lines.push(`STILL-OPEN findings (${diff.stillOpen.length}):`);
-  for (const f of diff.stillOpen) lines.push(`  = [${f.severity}] ${f.check} ${findingEvidence(f)}`);
+  for (const f of diff.stillOpen)
+    lines.push(`  = [${f.severity}] ${f.check} ${findingEvidence(f)}`);
   if (diff.stillOpen.length === 0) lines.push("  (none)");
   return lines.join("\n");
 }
